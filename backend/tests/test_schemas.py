@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from backend.schemas import JobRequest
+from backend.schemas import JobOptions, JobRequest
 
 
 def test_job_request_accepts_youtube_and_defaults() -> None:
@@ -24,3 +24,8 @@ def test_job_request_rejects_non_youtube_hosts(url: str) -> None:
 def test_job_request_rejects_invalid_clip_range() -> None:
     with pytest.raises(ValidationError):
         JobRequest(url="https://youtu.be/abc123", min_len=60, max_len=60)
+
+
+def test_job_options_rejects_invalid_clip_range() -> None:
+    with pytest.raises(ValidationError):
+        JobOptions(min_len=60, max_len=60)

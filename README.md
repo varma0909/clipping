@@ -1,6 +1,6 @@
 # ClipForge
 
-ClipForge turns a public YouTube video into scored, captioned vertical clips. It uses Next.js 14 for the UI and FastAPI for a local background-processing API.
+ClipForge turns a public YouTube video or a video file you upload into scored, captioned vertical clips. It uses Next.js 14 for the UI and FastAPI for a local background-processing API.
 
 > ClipForge processes videos you are authorized to use. YouTube access, download restrictions, and API provider terms still apply.
 
@@ -108,7 +108,8 @@ For an end-to-end test, run both servers and submit a short, public video for wh
 
 ## API
 
-- `POST /api/jobs` — enqueue a video
+- `POST /api/jobs` — enqueue a YouTube video URL
+- `POST /api/jobs/upload` — upload a video file and enqueue it
 - `GET /api/jobs/{job_id}` — status and progress
 - `GET /api/jobs/{job_id}/clips` — scored clips
 - `GET /api/clips/{clip_id}/download` and `/download/srt`

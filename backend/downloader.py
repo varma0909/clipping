@@ -1,4 +1,5 @@
 import logging
+import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 import yt_dlp
@@ -6,9 +7,32 @@ from yt_dlp.utils import DownloadError
 
 logger = logging.getLogger(__name__)
 
+SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
+
 
 class VideoDownloadError(RuntimeError):
     pass
+
+
+def get_video_duration(path: Path) -> float:
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", str(path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        duration = float(result.stdout.strip())
+    except FileNotFoundError as exc:
+        raise RuntimeError("FFprobe was not found. Install FFmpeg and add it to PATH.") from exc
+    except (subprocess.CalledProcessError, ValueError) as exc:
+        raise RuntimeError("Could not read the uploaded video. Choose a valid video file and try again.") from exc
+    if duration <= 0:
+        raise RuntimeError("Could not determine the video duration.")
+    return duration
 
 
 def download_video(url: str, destination: Path, max_hours: float) -> tuple[Path, float]:

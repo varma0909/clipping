@@ -1,13 +1,22 @@
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 
-class JobRequest(BaseModel):
-    url: HttpUrl
+class JobOptions(BaseModel):
     num_clips: int = Field(default=8, ge=1, le=20)
     min_len: int = Field(default=20, ge=10, le=180)
     max_len: int = Field(default=60, ge=15, le=300)
     caption_style: str = Field(default="bold", pattern="^(bold|classic|minimal)$")
     language: str | None = Field(default=None, max_length=20)
+
+    @model_validator(mode="after")
+    def valid_length_range(self) -> "JobOptions":
+        if self.max_len <= self.min_len:
+            raise ValueError("Maximum clip length must be greater than minimum clip length.")
+        return self
+
+
+class JobRequest(JobOptions):
+    url: HttpUrl
 
     @field_validator("url")
     @classmethod
@@ -20,12 +29,6 @@ class JobRequest(BaseModel):
         if "youtube.com" in host and value.path != "/watch" and not value.path.startswith(("/shorts/", "/live/", "/embed/")):
             raise ValueError("Enter a valid YouTube video URL.")
         return value
-
-    @model_validator(mode="after")
-    def valid_length_range(self) -> "JobRequest":
-        if self.max_len <= self.min_len:
-            raise ValueError("Maximum clip length must be greater than minimum clip length.")
-        return self
 
 
 class CandidateScore(BaseModel):

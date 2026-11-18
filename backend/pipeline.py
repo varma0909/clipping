@@ -9,7 +9,7 @@ from backend import database
 from backend.config import get_settings
 from backend.captions import write_captions
 from backend.cropper import create_vertical_video
-from backend.downloader import download_video
+from backend.downloader import download_video, get_video_duration
 from backend.renderer import render_clip
 from backend.scorer import choose_top_clips, score_candidates
 from backend.segmenter import split_candidates
@@ -26,8 +26,18 @@ def run_pipeline(job_id: str, request: dict[str, Any]) -> None:
         database.update_job(job_id, status="processing", step=step, progress=percent)
 
     try:
-        progress("Downloading", 5)
-        source, _ = download_video(request["url"], job_dir, get_settings().max_video_hours)
+        if request.get("source_path"):
+            progress("Preparing uploaded video", 5)
+            source = Path(request["source_path"])
+            duration = get_video_duration(source)
+            max_duration = get_settings().max_video_hours * 3600
+            if duration > max_duration:
+                raise RuntimeError(
+                    f"Video is longer than the {get_settings().max_video_hours:g}-hour limit."
+                )
+        else:
+            progress("Downloading", 5)
+            source, _ = download_video(request["url"], job_dir, get_settings().max_video_hours)
         audio = job_dir / "audio.wav"
         progress("Transcribing", 22)
         extract_audio(source, audio)

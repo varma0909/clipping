@@ -10,14 +10,15 @@ import zipfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from backend import database
 from backend.config import get_settings
+from backend.downloader import SUPPORTED_VIDEO_EXTENSIONS
 from backend.pipeline import run_pipeline
-from backend.schemas import JobRequest
+from backend.schemas import JobOptions, JobRequest
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -76,6 +77,56 @@ def create_job(payload: JobRequest, background_tasks: BackgroundTasks) -> dict[s
     job_id = str(uuid.uuid4())
     database.create_job(job_id, str(payload.url), time.time())
     background_tasks.add_task(run_pipeline, job_id, payload.model_dump(mode="json"))
+    return {"job_id": job_id}
+
+
+@app.post("/api/jobs/upload", status_code=202)
+def create_upload_job(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    num_clips: int = Form(default=8, ge=1, le=20),
+    min_len: int = Form(default=20, ge=10, le=180),
+    max_len: int = Form(default=60, ge=15, le=300),
+    caption_style: str = Form(default="bold", pattern="^(bold|classic|minimal)$"),
+    language: str | None = Form(default=None, max_length=20),
+) -> dict[str, str]:
+    extension = Path(file.filename or "").suffix.lower()
+    if extension not in SUPPORTED_VIDEO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Choose a supported video file (MP4, MOV, MKV, WEBM, AVI, or M4V).",
+        )
+    try:
+        options = JobOptions(
+            num_clips=num_clips,
+            min_len=min_len,
+            max_len=max_len,
+            caption_style=caption_style,
+            language=language,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    job_id = str(uuid.uuid4())
+    job_dir = get_settings().storage_path / job_id
+    source_path = job_dir / f"source{extension}"
+    try:
+        job_dir.mkdir(parents=True, exist_ok=False)
+        with source_path.open("wb") as destination:
+            while chunk := file.file.read(1024 * 1024):
+                destination.write(chunk)
+        database.create_job(job_id, "Uploaded video", time.time())
+    except (OSError, sqlite3.Error):
+        if job_dir.exists():
+            shutil.rmtree(job_dir)
+        logger.exception("Could not save uploaded video for job %s", job_id)
+        raise HTTPException(status_code=500, detail="Could not save the uploaded video.") from None
+    finally:
+        file.file.close()
+
+    request = options.model_dump(mode="json")
+    request["source_path"] = str(source_path)
+    background_tasks.add_task(run_pipeline, job_id, request)
     return {"job_id": job_id}
 
 

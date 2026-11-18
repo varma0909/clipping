@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { DragEvent, FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
@@ -8,6 +8,9 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 export default function HomePage() {
   const router = useRouter();
   const [url, setUrl] = useState("");
+  const [sourceType, setSourceType] = useState<"url" | "file">("url");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [numClips, setNumClips] = useState(8);
   const [minLength, setMinLength] = useState(20);
   const [maxLength, setMaxLength] = useState(60);
@@ -19,26 +22,54 @@ export default function HomePage() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
+    if (sourceType === "file" && !videoFile) {
+      setError("Choose a video file to upload.");
+      return;
+    }
     setSubmitting(true);
     try {
-      const response = await fetch(`${API_URL}/api/jobs`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url, num_clips: numClips, min_len: minLength, max_len: maxLength,
-          caption_style: style, language: language || null,
-        }),
-      });
+      const options = {
+        url,
+        num_clips: numClips,
+        min_len: minLength,
+        max_len: maxLength,
+        caption_style: style,
+        language: language || null,
+      };
+      let response: Response;
+      if (sourceType === "file" && videoFile) {
+        const formData = new FormData();
+        formData.append("file", videoFile);
+        formData.append("num_clips", String(numClips));
+        formData.append("min_len", String(minLength));
+        formData.append("max_len", String(maxLength));
+        formData.append("caption_style", style);
+        if (language) formData.append("language", language);
+        response = await fetch(`${API_URL}/api/jobs/upload`, { method: "POST", body: formData });
+      } else {
+        response = await fetch(`${API_URL}/api/jobs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(options),
+        });
+      }
       const data = await response.json();
       if (!response.ok) {
         const detail = data.detail;
-        throw new Error(typeof detail === "string" ? detail : "Check the YouTube link and clip settings.");
+        throw new Error(typeof detail === "string" ? detail : "Check the video input and clip settings.");
       }
       router.push(`/jobs/${data.job_id}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not connect to ClipForge. Is the backend running?");
       setSubmitting(false);
     }
+  }
+
+  function handleDrop(event: DragEvent<HTMLLabelElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+    const droppedFile = event.dataTransfer.files[0];
+    if (droppedFile) setVideoFile(droppedFile);
   }
 
   return (
@@ -73,16 +104,49 @@ export default function HomePage() {
           <div className="mb-6 flex items-start justify-between">
             <div>
               <h2 className="text-xl font-semibold">Create your clips</h2>
-              <p className="mt-1 text-sm text-white/45">Paste a public YouTube video link to get started.</p>
+              <p className="mt-1 text-sm text-white/45">Use a YouTube link or upload a video file.</p>
             </div>
             <span className="rounded-lg bg-white/[.06] px-2.5 py-1.5 text-xs text-white/55">01 / INPUT</span>
           </div>
-          <label htmlFor="video-url" className="mb-2 block text-xs font-medium text-white/65">YOUTUBE VIDEO URL</label>
-          <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-4 focus-within:border-violet/70">
-            <span className="text-red-400">▶</span>
-            <input id="video-url" type="url" required value={url} onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://youtube.com/watch?v=..." className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-white/25" />
+          <div className="mb-4 grid grid-cols-2 gap-2 rounded-xl bg-black/20 p-1">
+            <button type="button" onClick={() => setSourceType("url")}
+              className={`rounded-lg px-3 py-2.5 text-xs font-medium transition ${sourceType === "url" ? "bg-white/10 text-white" : "text-white/45 hover:text-white/75"}`}>
+              YouTube link
+            </button>
+            <button type="button" onClick={() => setSourceType("file")}
+              className={`rounded-lg px-3 py-2.5 text-xs font-medium transition ${sourceType === "file" ? "bg-white/10 text-white" : "text-white/45 hover:text-white/75"}`}>
+              Upload video
+            </button>
           </div>
+          {sourceType === "url" ? (
+            <>
+              <label htmlFor="video-url" className="mb-2 block text-xs font-medium text-white/65">YOUTUBE VIDEO URL</label>
+              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-black/20 px-4 focus-within:border-violet/70">
+                <span className="text-red-400">▶</span>
+                <input id="video-url" type="url" required value={url} onChange={(event) => setUrl(event.target.value)}
+                  placeholder="https://youtube.com/watch?v=..." className="h-12 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-white/25" />
+              </div>
+            </>
+          ) : (
+            <>
+              <label htmlFor="video-file"
+                onDragOver={(event) => { event.preventDefault(); setIsDragging(true); }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                className={`flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-4 py-5 text-center transition ${isDragging ? "border-violet bg-violet/10" : "border-white/15 bg-black/20 hover:border-violet/60"}`}>
+                <span className="text-sm font-medium text-white/80">{videoFile ? videoFile.name : "Drop a video here or browse files"}</span>
+                <span className="mt-2 text-xs text-white/40">MP4, MOV, MKV, WEBM, AVI, or M4V</span>
+              </label>
+              <input id="video-file" type="file" accept="video/*,.mkv,.avi,.m4v" className="sr-only"
+                onChange={(event) => setVideoFile(event.target.files?.[0] ?? null)} />
+              {videoFile && (
+                <button type="button" onClick={() => setVideoFile(null)}
+                  className="mt-2 text-xs text-white/45 underline hover:text-white/75">
+                  Remove selected video
+                </button>
+              )}
+            </>
+          )}
 
           <div className="mt-6 grid grid-cols-2 gap-4">
             <label className="text-xs text-white/60">NUMBER OF CLIPS
