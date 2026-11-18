@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body {
+  background:
+    radial-gradient(ellipse at 18% 0%, rgba(114, 78, 255, .13), transparent 34rem),
+    #090b12;
+  color: #f5f4fb;
+}
+button, input, select { font: inherit; }
+::selection { background: #9274ff; color: white; }
+.range-input { accent-color: #c5ff76; }
+.glass { background: rgba(17, 20, 30, .78); backdrop-filter: blur(18px); }
